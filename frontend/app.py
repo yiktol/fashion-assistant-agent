@@ -108,7 +108,54 @@ def run_app() -> None:  # pragma: no cover - exercised only via `streamlit run`
     from components.agent.settings import ConfigError, load_settings
     from components.agent.tools.s3_io import download_bytes
 
+    # Guided empty-state suggestions, each mapped to a real tool path. Stable
+    # keys are derived from the enumerate index below.
+    _SUGGESTIONS = [
+        "Find me a floral summer dress",
+        "What should I wear in London today?",
+        "Change my photo background to a beach",
+        "Recolor this jacket to navy",
+        "Generate a minimalist autumn outfit",
+    ]
+
+    # Map a recognized tool name to a friendly live-progress label.
+    _PROGRESS_LABELS = {
+        "image_lookup": "Searching the catalog…",
+        "generate_image": "Generating a look…",
+        "inpaint": "Restyling your photo…",
+        "outpaint": "Extending your photo…",
+        "get_weather": "Checking the weather…",
+        "weather": "Checking the weather…",
+    }
+
     st.set_page_config(layout="wide", page_title="Fashion Assistant", page_icon="🛍️")
+
+    # --- Item 1: restrained brand CSS (ONE markdown call, no remote fonts). ---
+    st.markdown(
+        """
+        <style>
+          /* Rounded image corners + soft card feel. */
+          [data-testid="stImage"] img { border-radius: 14px; }
+          .fa-wordmark { font-size: 2.1rem; font-weight: 700; letter-spacing: -0.02em;
+                         margin: 0 0 0.1rem 0; line-height: 1.1; }
+          .fa-wordmark .fa-dot { color: var(--primary-color, #6C5CE7); }
+          .fa-tagline { color: #6b7280; font-size: 0.98rem; margin: 0 0 0.6rem 0; }
+          /* Soft card shadow for catalog + upload panels. */
+          .fa-card { border: 1px solid #ece9e3; border-radius: 16px; padding: 0.6rem;
+                     box-shadow: 0 2px 10px rgba(31,36,48,0.06); background: #fff; }
+          /* Pill suggestion buttons: full-width, rounded, subtle. */
+          .fa-pills [data-testid="stButton"] > button {
+              border-radius: 999px; border: 1px solid #e3dfd7; background: #fff;
+              font-weight: 500; padding: 0.4rem 0.9rem; }
+          .fa-pills [data-testid="stButton"] > button:hover {
+              border-color: var(--primary-color, #6C5CE7); }
+          /* Tighter chat spacing + full-width conversation. */
+          [data-testid="stChatMessage"] { padding-top: 0.4rem; padding-bottom: 0.4rem; }
+          .fa-attach { color: #6b7280; font-size: 0.85rem; margin-top: -0.4rem; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
     try:
         settings = load_settings()
@@ -126,6 +173,8 @@ def run_app() -> None:  # pragma: no cover - exercised only via `streamlit run`
     st.session_state.setdefault("previous_img", None)
     st.session_state.setdefault("user_image", None)
     st.session_state.setdefault("upload_key", None)
+    # A queued suggestion from a pill click, consumed on the next run.
+    st.session_state.setdefault("pending_prompt", None)
 
     def ensure_agent():
         """Build the agent + hook once per session (New Chat rebuilds)."""
@@ -150,8 +199,20 @@ def run_app() -> None:  # pragma: no cover - exercised only via `streamlit run`
         st.session_state["previous_img"] = None
         st.session_state["user_image"] = None
         st.session_state["upload_key"] = None
+        st.session_state["pending_prompt"] = None
         st.session_state.pop("agent", None)
         st.session_state.pop("collector", None)
+
+    def remove_image() -> None:
+        """Clear the attached image state (sidebar Remove button)."""
+        st.session_state["img"] = None
+        st.session_state["previous_img"] = None
+        st.session_state["user_image"] = None
+        st.session_state["upload_key"] = None
+
+    def queue_suggestion(text: str) -> None:
+        """Queue a pill suggestion to submit as the next user turn."""
+        st.session_state["pending_prompt"] = text
 
     def upload_image(file_obj) -> str:
         """Normalize + upload an image to ``uploads/<uuid>.png``; return the key."""
@@ -166,13 +227,111 @@ def run_app() -> None:  # pragma: no cover - exercised only via `streamlit run`
         s3 = boto3.client("s3", region_name=settings.primary_region)
         return Image.open(io.BytesIO(download_bytes(s3, s3_uri)))
 
-    st.title("Fashion Assistant")
+    def render_match_grid(matches: list[dict], msg_key: str) -> None:
+        """Render top-K catalog matches as a responsive grid of cards."""
+        cols_per_row = 3
+        for row_start in range(0, len(matches), cols_per_row):
+            row = matches[row_start : row_start + cols_per_row]
+            columns = st.columns(cols_per_row)
+            for offset, match in enumerate(row):
+                card_index = row_start + offset
+                column = columns[offset]
+                with column:
+                    uri = match.get("s3_uri")
+                    name = match.get("name") or "Catalog match"
+                    distance = match.get("distance")
+                    try:
+                        card_img = download_image(uri)
+                    except Exception as exc:  # noqa: BLE001 - surfaced to the user
+                        st.warning(f"Could not load {name}: {exc}")
+                        continue
+                    st.image(card_img, caption=name, use_container_width=True)
+                    if distance is not None:
+                        st.caption(f"Similarity hint · distance {distance:.3f}")
+                    buffer = io.BytesIO()
+                    card_img.save(buffer, format="PNG")
+                    st.download_button(
+                        label="Download",
+                        data=buffer,
+                        file_name=f"{name.replace(' ', '_')}.png",
+                        mime="image/png",
+                        key=f"dl-{msg_key}-{card_index}",
+                    )
+
+    def render_assistant_message(chat: dict, msg_key: str) -> None:
+        """Render one stored assistant turn full-width (history re-render)."""
+        st.markdown(chat["content"])
+        if chat.get("matches"):
+            render_match_grid(chat["matches"], msg_key)
+        if "image" in chat:
+            edit = chat.get("edit_source")
+            if edit is not None:
+                before, after = st.columns(2)
+                before.image(
+                    edit, caption="Before · your photo", use_container_width=True
+                )
+                after.image(
+                    chat["image"], caption="After · edited", use_container_width=True
+                )
+            else:
+                st.image(
+                    chat["image"], caption="Generated look", use_container_width=True
+                )
+            buffer = io.BytesIO()
+            chat["image"].save(buffer, format="PNG")
+            st.download_button(
+                label="Download image",
+                data=buffer,
+                file_name="generated_image.png",
+                mime="image/png",
+                key=f"dl-img-{msg_key}",
+            )
+        if chat.get("error_message"):
+            st.error(chat["error_message"])
+        if chat.get("trace"):
+            with st.expander("How I did this", expanded=False):
+                st.markdown(chat["trace"])
+
+    def latest_error_message(collector, start_index: int) -> str | None:
+        """Return a friendly message for the newest error envelope this turn."""
+        for _name, result in reversed(collector.results[start_index:]):
+            if not isinstance(result, dict) or result.get("status") != "error":
+                continue
+            try:
+                payload = result["content"][0]["json"]
+            except (KeyError, IndexError, TypeError):
+                continue
+            message = payload.get("message")
+            if message:
+                return (
+                    f"That didn't work: {message}. "
+                    "If this keeps happening, an admin may need to enable the "
+                    "image models in Bedrock."
+                )
+        return None
+
+    def latest_tool_name(collector, start_index: int) -> str | None:
+        """Return the newest tool name recorded this turn (for progress label)."""
+        slice_ = collector.results[start_index:]
+        if not slice_:
+            return None
+        return slice_[-1][0]
+
+    # --- Item 1: styled wordmark header + tagline. ---
+    st.markdown(
+        '<p class="fa-wordmark">Fashion Assistant<span class="fa-dot">.</span></p>'
+        '<p class="fa-tagline">Your AI stylist — search the catalog, restyle your '
+        "photos, dress for the weather</p>",
+        unsafe_allow_html=True,
+    )
 
     if "chat_history" not in st.session_state or not st.session_state["chat_history"]:
         st.session_state["chat_history"] = [INIT_MESSAGE]
 
+    # --- Item 7: styled sidebar upload card. ---
     with st.sidebar:
         st.button("New Chat", on_click=new_chat, type="primary")
+        st.markdown("#### Your photo")
         st.session_state["img"] = st.file_uploader(
             "Upload an image", type=["png", "jpeg"], label_visibility="collapsed"
         )
@@ -183,38 +342,49 @@ def run_app() -> None:  # pragma: no cover - exercised only via `streamlit run`
             st.session_state["previous_img"] = st.session_state["img"]
             st.session_state["user_image"] = st.session_state["img"]
             st.session_state["upload_key"] = key
-    else:
-        st.session_state["user_image"] = None
-        st.session_state["upload_key"] = None
 
-    if st.session_state["user_image"] is not None:
-        st.image(st.session_state["user_image"], caption="Uploaded Image", width=200)
+    with st.sidebar:
+        if st.session_state["user_image"] is not None:
+            st.image(
+                st.session_state["user_image"],
+                caption=getattr(st.session_state["user_image"], "name", "Attached"),
+                use_container_width=True,
+            )
+            st.button("Remove image", on_click=remove_image, key="remove-image")
+        else:
+            st.caption("Attach a photo to restyle, recolor, or extend it.")
 
     for index, chat in enumerate(st.session_state["chat_history"]):
         with st.chat_message(chat["role"]):
             if chat["role"] == "assistant":
-                col1, col2, col3 = st.columns((5, 4, 1))
-                col1.markdown(chat["content"])
-                if "image" in chat:
-                    col1.image(chat["image"], caption="Result Image", width=200)
-                    buffer = io.BytesIO()
-                    chat["image"].save(buffer, format="PNG")
-                    col1.download_button(
-                        label="Download Image",
-                        data=buffer,
-                        file_name="generated_image.png",
-                        mime="image/png",
-                        key=str(uuid.uuid4()),
-                    )
-                if chat.get("trace") and col3.checkbox(
-                    "Trace", value=False, key=f"trace-{index}"
-                ):
-                    col2.subheader("Trace")
-                    col2.markdown(chat["trace"])
+                render_assistant_message(chat, msg_key=f"hist-{index}")
             else:
                 st.markdown(chat["content"])
 
-    if prompt := st.chat_input("Start your conversation..."):
+    # --- Item 4: guided empty state (only the INIT greeting present). ---
+    history = st.session_state["chat_history"]
+    if len(history) == 1 and history[0] is INIT_MESSAGE:
+        st.markdown("##### Try one of these")
+        st.markdown('<div class="fa-pills">', unsafe_allow_html=True)
+        pill_cols = st.columns(2)
+        for pill_index, suggestion in enumerate(_SUGGESTIONS):
+            column = pill_cols[pill_index % 2]
+            column.button(
+                suggestion,
+                key=f"pill-{pill_index}",
+                on_click=queue_suggestion,
+                args=(suggestion,),
+                use_container_width=True,
+            )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    if st.session_state["user_image"] is not None:
+        st.markdown('<p class="fa-attach">📎 Image attached</p>', unsafe_allow_html=True)
+
+    typed = st.chat_input("Start your conversation...")
+    prompt = st.session_state.pop("pending_prompt", None) or typed
+
+    if prompt:
         st.session_state["chat_history"].append({"role": "human", "content": prompt})
         with st.chat_message("human"):
             st.markdown(prompt)
@@ -229,49 +399,100 @@ def run_app() -> None:  # pragma: no cover - exercised only via `streamlit run`
         handoff = build_handoff(prompt, s3_uri)
 
         with st.chat_message("assistant"):
-            col1, col2, col3 = st.columns((5, 4, 1))
             trace = TraceCollector()
             agent.callback_handler = trace
-            result = agent(handoff)
+
+            # --- Item 5: live progress via st.status (hasattr-gated). ---
+            if hasattr(st, "status"):
+                with st.status("Thinking…", expanded=False) as status:
+                    result = agent(handoff)
+                    tool_name = latest_tool_name(collector, results_before)
+                    status.update(
+                        label=_PROGRESS_LABELS.get(tool_name, "Done"),
+                        state="complete",
+                    )
+            else:
+                with st.spinner("Working on it…"):
+                    result = agent(handoff)
             response_text = str(result)
 
-            col1.markdown(response_text)
+            st.markdown(response_text)
 
+            msg_key = f"live-{len(st.session_state['chat_history'])}"
             chat_entry = {
                 "role": "assistant",
                 "content": response_text,
                 "trace": trace.text,
             }
 
+            # --- Item 2: top-K catalog grid from FEAT-001's accessor. ---
+            matches = collector.latest_image_lookup_matches()
+            # Only treat matches as fresh if the lookup ran this turn.
+            lookup_this_turn = any(
+                name == "image_lookup"
+                for name, _ in collector.results[results_before:]
+            )
+            if matches and lookup_this_turn:
+                render_match_grid(matches, msg_key)
+                chat_entry["matches"] = matches
+
+            # --- Item 3: single large image + before/after for edits. ---
             result_uri = collector.latest_ok_s3_uri()
             if result_uri:
                 try:
                     generated_img = download_image(result_uri)
                 except Exception as exc:  # noqa: BLE001 - surfaced to the user
-                    col1.warning(f"Could not load result image: {exc}")
+                    st.warning(f"Could not load result image: {exc}")
                     generated_img = None
                 if generated_img is not None:
-                    col1.image(generated_img, caption="Result Image", width=200)
+                    edit_source = None
+                    if st.session_state["user_image"] is not None:
+                        try:
+                            edit_source = Image.open(st.session_state["user_image"])
+                        except Exception:  # noqa: BLE001 - best-effort before/after
+                            edit_source = None
+                    if edit_source is not None:
+                        before, after = st.columns(2)
+                        before.image(
+                            edit_source,
+                            caption="Before · your photo",
+                            use_container_width=True,
+                        )
+                        after.image(
+                            generated_img,
+                            caption="After · edited",
+                            use_container_width=True,
+                        )
+                        chat_entry["edit_source"] = edit_source
+                    else:
+                        st.image(
+                            generated_img,
+                            caption="Generated look",
+                            use_container_width=True,
+                        )
                     buffer = io.BytesIO()
                     generated_img.save(buffer, format="PNG")
-                    col1.download_button(
-                        label="Download Image",
+                    st.download_button(
+                        label="Download image",
                         data=buffer,
                         file_name="generated_image.png",
                         mime="image/png",
-                        key=str(uuid.uuid4()),
+                        key=f"dl-img-{msg_key}",
                     )
                     chat_entry["image"] = generated_img
 
-            if trace.text and col3.checkbox(
-                "Trace", value=True, key=f"trace-live-{len(st.session_state['chat_history'])}"
-            ):
-                col2.subheader("Trace")
-                col2.markdown(trace.text)
+            # --- Correctness: surface tool error envelopes as friendly cards. ---
+            error_message = latest_error_message(collector, results_before)
+            if error_message:
+                st.error(error_message)
+                chat_entry["error_message"] = error_message
+
+            # --- Item 6: trace lives in a collapsed expander, full width. ---
+            if trace.text:
+                with st.expander("How I did this", expanded=False):
+                    st.markdown(trace.text)
 
             st.session_state["chat_history"].append(chat_entry)
-        # Keep `results_before` referenced for clarity on turn boundaries.
-        _ = results_before
 
 
 if __name__ == "__main__":

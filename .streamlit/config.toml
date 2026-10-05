@@ -1,0 +1,12 @@
+# Fashion Assistant theme. Premium-neutral base with one tasteful accent.
+# No remote/webfont downloads; font falls back to the system/sans stack.
+[theme]
+primaryColor = "#6C5CE7"
+backgroundColor = "#FBFAF8"
+secondaryBackgroundColor = "#F2F0EC"
+textColor = "#1F2430"
+font = "sans serif"
+
+[server]
+# Keep uploads reasonable for photo restyling; no behavior-affecting defaults.
+maxUploadSize = 50
