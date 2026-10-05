@@ -30,7 +30,9 @@ stack = FashionAgentStack(
 NagSuppressions.add_stack_suppressions(
     stack,
     [
-        {"id": "AwsSolutions-IAM5", "reason": "Need the wildcard for CloudWatch logs so the stack can create several streams"},
+        {"id": "AwsSolutions-IAM5", "reason": "Need the wildcard for CloudWatch logs so the S3 Vectors custom-resource provider Lambda can create several log streams"},
+        {"id": "AwsSolutions-IAM4", "reason": "The S3 Vectors custom-resource provider Lambdas use the AWS-managed basic execution role (standard CDK provider pattern)"},
+        {"id": "AwsSolutions-L1", "reason": "The custom_resources.Provider framework pins its own Lambda runtime (CDK-managed, not user-selectable)"},
     ],
     True,
 )

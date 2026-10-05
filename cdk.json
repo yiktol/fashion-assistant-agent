@@ -1,6 +1,5 @@
 {
   "app": "python app.py",
-  "profile": "sandbox",
   "watch": {
     "include": [
       "**"
