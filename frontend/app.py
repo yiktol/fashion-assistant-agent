@@ -440,21 +440,31 @@ def run_app() -> None:  # pragma: no cover - exercised only via `streamlit run`
         st.markdown('<p class="fa-attach">📎 Image attached</p>', unsafe_allow_html=True)
 
     # --- Mask-free vs. precise edit helper hint. ---
-    st.caption(
-        "Describe the change in words for an automatic edit (replace or recolor "
-        "an item — no mask needed), or brush a region below for a precise inpaint."
-    )
+    _has_image = st.session_state["user_image"] is not None
+    if _has_image:
+        st.caption(
+            "✨ Describe the change in words for an automatic edit (replace or "
+            "recolor an item — no mask needed), or use the **🖌️ brush below** to "
+            "mark a region for a precise inpaint."
+        )
+    else:
+        st.caption(
+            "Describe the change in words for an automatic edit (replace or recolor "
+            "an item — no mask needed). Attach a photo in the sidebar to also brush "
+            "a region for a precise inpaint."
+        )
 
     # --- Optional in-UI mask brush (precise inpaint without a hand-made mask). ---
     # Builds a black/white mask from brush strokes over the uploaded image and
-    # uploads it; the agent then passes its s3:// URI to inpaint. Collapsed by
-    # default so the mask-free search_replace/recolor path stays the easy choice.
+    # uploads it; the agent then passes its s3:// URI to inpaint. Expanded once an
+    # image is attached so the brush is discoverable; the mask-free
+    # search_replace/recolor path still works without ever opening it.
     mask_uri = None
     if (
         st.session_state["user_image"] is not None
         and st.session_state.get("normalized_png")
     ):
-        with st.expander("Precise edit — brush a region (optional)", expanded=False):
+        with st.expander("🖌️ Precise edit — brush a region to inpaint", expanded=True):
             try:
                 # Compat shim for streamlit-drawable-canvas 0.9.3 on Streamlit
                 # >=1.40. Two breaks: (1) `image_to_url` moved from
