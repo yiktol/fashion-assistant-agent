@@ -41,3 +41,16 @@ class ToolResultCollector(HookProvider):
             if payload.get("result") == "ok" and payload.get("s3_uri"):
                 return payload["s3_uri"]
         return None
+
+    def latest_image_lookup_matches(self) -> list[dict]:
+        """Return the newest ``ok`` ``image_lookup`` matches list, else ``[]``."""
+        for name, result in reversed(self.results):
+            if name != "image_lookup":
+                continue
+            try:
+                payload = result["content"][0]["json"]
+            except (KeyError, IndexError, TypeError):
+                continue
+            if payload.get("result") == "ok":
+                return payload.get("matches", [])
+        return []

@@ -61,6 +61,55 @@ def test_lookup_returns_top_hit_s3_uri(settings, fake_s3, embedding_response):
     assert s3vectors.last_query["returnMetadata"] is True
 
 
+def test_lookup_returns_all_topk_matches(settings, fake_s3, embedding_response):
+    bedrock = RecordingBedrock("us-east-1", embedding_response)
+    s3vectors = RecordingS3Vectors(
+        [
+            {
+                "key": "cat-1",
+                "distance": 0.12,
+                "metadata": {
+                    "s3_uri": "s3://fashion-bucket/catalog/dress.png",
+                    "name": "Floral Dress",
+                },
+            },
+            {
+                "key": "cat-2",
+                "distance": 0.34,
+                "metadata": {
+                    "s3_uri": "s3://fashion-bucket/catalog/skirt.png",
+                    "name": "Pleated Skirt",
+                },
+            },
+            {
+                "key": "cat-3",
+                "distance": 0.56,
+                "metadata": {"name": "No URI Item"},
+            },
+        ]
+    )
+    result = image_lookup_impl(
+        bedrock, s3vectors, fake_s3, settings, input_query="a floral dress"
+    )
+    assert result["status"] == "success"
+    payload = result["content"][0]["json"]
+    assert payload["result"] == "ok"
+    matches = payload["matches"]
+    # Only the two hits that carried an s3_uri are included.
+    assert len(matches) == 2
+    assert [m["s3_uri"] for m in matches] == [
+        "s3://fashion-bucket/catalog/dress.png",
+        "s3://fashion-bucket/catalog/skirt.png",
+    ]
+    assert [m["name"] for m in matches] == ["Floral Dress", "Pleated Skirt"]
+    assert [m["distance"] for m in matches] == [0.12, 0.34]
+    for m in matches:
+        assert set(m.keys()) == {"s3_uri", "name", "distance"}
+    # Top-level s3_uri/distance mirror matches[0] (backward-compat).
+    assert payload["s3_uri"] == matches[0]["s3_uri"]
+    assert payload["distance"] == matches[0]["distance"]
+
+
 def test_lookup_zero_hits_is_not_found_without_echo(settings, fake_s3, embedding_response):
     bedrock = RecordingBedrock("us-east-1", embedding_response)
     s3vectors = RecordingS3Vectors([])

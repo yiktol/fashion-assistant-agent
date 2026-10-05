@@ -1,0 +1,26 @@
+{
+  "id": "FEAT-001",
+  "type": "feat",
+  "description": "Backend result-shape change so the catalog lookup exposes ALL top-K matches. image_lookup gains an additive `matches` list (each {s3_uri, name, distance}) while keeping its existing top-level keys; ToolResultCollector gains latest_image_lookup_matches() while keeping latest_ok_s3_uri(). Self-contained with its own unit tests; independent of the UI feature except that FEAT-002 depends on these accessors, so this comes first.",
+  "status": "completed",
+  "steps": [
+    "In components/agent/tools/image_lookup.py image_lookup_impl: after `hits = response.get(\"vectors\") or []` and the zero-hit not_found guard, build `matches = [{\"s3_uri\": m.get(\"s3_uri\"), \"name\": m.get(\"name\"), \"distance\": h.get(\"distance\")} for h in hits for m in [h.get(\"metadata\") or {}] if m.get(\"s3_uri\")]`. If `matches` is empty (no hit had an s3_uri), keep the existing not_found path (use hits[0].get('distance') for the message as today). Otherwise return `ok(s3_uri=matches[0][\"s3_uri\"], distance=matches[0][\"distance\"], matches=matches, message=\"match found\")`. Do not change the two existing not_found branches' semantics; `ok(**fields)` already passes `matches` through into the json payload.",
+    "Update the image_lookup @tool docstring Returns block to document the new `matches` list key alongside the existing s3_uri/distance keys.",
+    "In components/agent/hooks.py add method `latest_image_lookup_matches(self) -> list[dict]` to ToolResultCollector: iterate `reversed(self.results)`; for each `(name, result)` where `name == \"image_lookup\"`, extract `payload = result[\"content\"][0][\"json\"]` guarded by try/except (KeyError, IndexError, TypeError) exactly like latest_ok_s3_uri(); if `payload.get(\"result\") == \"ok\"`, return `payload.get(\"matches\", [])`. Return `[]` if none match. Leave latest_ok_s3_uri() unchanged.",
+    "In tests/test_image_lookup.py add test_lookup_returns_all_topk_matches: feed RecordingS3Vectors three hits — two with metadata {s3_uri, name} and distinct distances, one WITHOUT an s3_uri — assert payload[\"result\"]==\"ok\", len(payload[\"matches\"])==2, matches preserve hit order, each has keys s3_uri/name/distance, and payload[\"s3_uri\"]/payload[\"distance\"] equal matches[0]. Keep existing image_lookup tests unchanged (they must still pass).",
+    "In tests/test_envelope.py add test_collector_returns_latest_image_lookup_matches: record an image_lookup ok result built via ok(s3_uri=..., matches=[{...},{...}]) and assert latest_image_lookup_matches() returns that list; add test_collector_matches_empty_when_not_found (latest image_lookup is not_found -> []) and test that returns [] when no image_lookup ran. Reuse the existing FakeAfterToolCallEvent helper."
+  ],
+  "acceptance_criteria": [
+    "image_lookup_impl success envelope contains a `matches` list where every element has keys s3_uri (str), name (str|None), distance (float|None), covering ALL top-K hits that carried an s3_uri in metadata.",
+    "payload[\"s3_uri\"] and payload[\"distance\"] still equal matches[0] (backward-compat with latest_ok_s3_uri() and existing tests).",
+    "ToolResultCollector.latest_image_lookup_matches() returns the newest ok image_lookup matches list, or [] when there is none; latest_ok_s3_uri() behavior is unchanged.",
+    "`python3 -m pytest -q` passes the full suite (baseline 35 + the new tests) with no modifications to existing assertions."
+  ],
+  "verification": [
+    "cd /Users/erictole/demo/fashion-assistant-agent/.worktrees/frontend-modern-ux && python3 -m pytest -q tests/test_image_lookup.py tests/test_envelope.py",
+    "cd /Users/erictole/demo/fashion-assistant-agent/.worktrees/frontend-modern-ux && python3 -m pytest -q",
+    "cd /Users/erictole/demo/fashion-assistant-agent/.worktrees/frontend-modern-ux && python -c \"import frontend.app\""
+  ],
+  "blocked_reason": null,
+  "findings": "For FEAT-002: On an 'ok' image_lookup envelope the json payload now carries payload['matches'] (key: 'matches'), a list[dict]. Each element has exactly three keys: 's3_uri' (str, always present/non-null for list members), 'name' (str|None, from vector metadata), 'distance' (float|None). Matches preserve S3 Vectors hit order (best/nearest first) and include ALL top-K hits whose metadata carried an s3_uri; hits without an s3_uri are dropped. Top-level payload['s3_uri'] and payload['distance'] still mirror matches[0] (backward-compat). The 'matches' key is ABSENT on not_found/error envelopes. Accessor: ToolResultCollector.latest_image_lookup_matches() -> list[dict]; returns the newest ok image_lookup matches list, or [] when the latest image_lookup was not_found/error, when no matches key exists, or when no image_lookup ran. latest_ok_s3_uri() is unchanged. Full suite: 39 passed (35 baseline + 4 new)."
+}

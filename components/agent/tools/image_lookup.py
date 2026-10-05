@@ -63,16 +63,24 @@ def image_lookup_impl(
             s3_uri=None, distance=None, message="no matching catalog image found"
         )
 
-    top = hits[0]
-    metadata = top.get("metadata") or {}
-    s3_uri = metadata.get("s3_uri")
-    if not s3_uri:
+    matches = [
+        {"s3_uri": m.get("s3_uri"), "name": m.get("name"), "distance": h.get("distance")}
+        for h in hits
+        for m in [h.get("metadata") or {}]
+        if m.get("s3_uri")
+    ]
+    if not matches:
         return not_found(
             s3_uri=None,
-            distance=top.get("distance"),
+            distance=hits[0].get("distance"),
             message="matching vector has no catalog s3_uri",
         )
-    return ok(s3_uri=s3_uri, distance=top.get("distance"), message="match found")
+    return ok(
+        s3_uri=matches[0]["s3_uri"],
+        distance=matches[0]["distance"],
+        matches=matches,
+        message="match found",
+    )
 
 
 def make_image_lookup(bedrock_embedding, s3vectors, s3, settings):
@@ -88,7 +96,12 @@ def make_image_lookup(bedrock_embedding, s3vectors, s3, settings):
 
         Returns (json payload):
             {"result": "ok"|"not_found"|"error", "s3_uri": str|None,
-             "distance": float|None, "message": str}
+             "distance": float|None, "message": str,
+             "matches": [{"s3_uri": str, "name": str|None,
+                          "distance": float|None}, ...]}
+            On "ok", "matches" lists ALL top-K hits that carried a catalog
+            s3_uri (newest/best first) and "s3_uri"/"distance" mirror
+            matches[0]; "matches" is absent on not_found/error.
         """
         return image_lookup_impl(
             bedrock_embedding, s3vectors, s3, settings, input_image_uri, input_query

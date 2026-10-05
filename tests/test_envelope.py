@@ -73,6 +73,36 @@ def test_collector_returns_none_when_no_ok():
     assert collector.latest_ok_s3_uri() is None
 
 
+def test_collector_returns_latest_image_lookup_matches():
+    collector = ToolResultCollector()
+    matches = [
+        {"s3_uri": "s3://b/a.png", "name": "A", "distance": 0.1},
+        {"s3_uri": "s3://b/b.png", "name": "B", "distance": 0.2},
+    ]
+    collector._on_after_tool_call(
+        FakeAfterToolCallEvent(
+            "image_lookup", ok(s3_uri="s3://b/a.png", matches=matches)
+        )
+    )
+    assert collector.latest_image_lookup_matches() == matches
+
+
+def test_collector_matches_empty_when_not_found():
+    collector = ToolResultCollector()
+    collector._on_after_tool_call(
+        FakeAfterToolCallEvent("image_lookup", not_found(s3_uri=None))
+    )
+    assert collector.latest_image_lookup_matches() == []
+
+
+def test_collector_matches_empty_when_no_image_lookup():
+    collector = ToolResultCollector()
+    collector._on_after_tool_call(
+        FakeAfterToolCallEvent("generate_image", ok(s3_uri="s3://b/gen.png"))
+    )
+    assert collector.latest_image_lookup_matches() == []
+
+
 def test_collector_registers_on_after_tool_call():
     from strands.hooks import AfterToolCallEvent
 
