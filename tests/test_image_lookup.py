@@ -157,3 +157,46 @@ def test_embeddings_include_dimension_when_set(settings, embedding_response):
     embeddings.embed(bedrock, settings, text="hello")
     params = bedrock.last_call["body"]["singleEmbeddingParams"]
     assert params["embeddingDimension"] == 1024
+
+
+# --------------------------------------------------------------------------- #
+# image format detection (Nova 2 rejects a format/bytes MIME mismatch)
+# --------------------------------------------------------------------------- #
+import base64  # noqa: E402
+
+
+def _b64(raw: bytes) -> str:
+    return base64.b64encode(raw).decode("ascii")
+
+
+# Real magic-number headers padded with filler bytes.
+_PNG_B64 = _b64(b"\x89PNG\r\n\x1a\n" + b"\x00" * 16)
+_JPEG_B64 = _b64(b"\xff\xd8\xff\xe0" + b"\x00" * 16)
+_GIF_B64 = _b64(b"GIF89a" + b"\x00" * 16)
+_WEBP_B64 = _b64(b"RIFF\x00\x00\x00\x00WEBP" + b"\x00" * 12)
+_UNKNOWN_B64 = _b64(b"\x00\x01\x02\x03" + b"\x00" * 16)
+
+
+def test_detect_image_format_recognizes_signatures():
+    assert embeddings._detect_image_format(_PNG_B64) == "png"
+    assert embeddings._detect_image_format(_JPEG_B64) == "jpeg"
+    assert embeddings._detect_image_format(_GIF_B64) == "gif"
+    assert embeddings._detect_image_format(_WEBP_B64) == "webp"
+    # Unrecognized bytes fall back to the default format.
+    assert embeddings._detect_image_format(_UNKNOWN_B64) == embeddings._IMAGE_FORMAT
+
+
+def test_embeddings_declares_png_format_for_png_bytes(settings, embedding_response):
+    """A PNG upload must be declared format=png (regression: was hardcoded jpeg)."""
+    bedrock = RecordingBedrock("us-east-1", embedding_response)
+    embeddings.embed(bedrock, settings, image_b64=_PNG_B64)
+    image_param = bedrock.last_call["body"]["singleEmbeddingParams"]["image"]
+    assert image_param["format"] == "png"
+    assert image_param["source"]["bytes"] == _PNG_B64
+
+
+def test_embeddings_declares_jpeg_format_for_jpeg_bytes(settings, embedding_response):
+    bedrock = RecordingBedrock("us-east-1", embedding_response)
+    embeddings.embed(bedrock, settings, image_b64=_JPEG_B64)
+    image_param = bedrock.last_call["body"]["singleEmbeddingParams"]["image"]
+    assert image_param["format"] == "jpeg"
