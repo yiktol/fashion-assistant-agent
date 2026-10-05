@@ -67,21 +67,24 @@ def test_inpaint_uses_profile_id_in_primary_region(settings, fake_s3, image_resp
         settings,
         "s3://fashion-bucket/uploads/photo.jpg",
         "make it blue",
-        search_prompt="the shirt",
+        mask_uri="s3://fashion-bucket/uploads/mask.png",
     )
     assert result["status"] == "success"
     assert bedrock.last_call["region_name"] == "us-east-1"
     assert bedrock.last_call["modelId"] == "us.stability.stable-image-inpaint-v1:0"
     body = bedrock.last_call["body"]
     assert body["output_format"] == "png"
-    assert body["search_prompt"] == "the shirt"
+    # Verified Stability inpaint contract: a mask IMAGE, never search_prompt.
+    assert "mask" in body
+    assert "search_prompt" not in body
+    assert "mask_source" not in body
     assert "image" in body
     # source stem reused, extension forced to .png (never derived from .jpg).
     key = fake_s3.puts[0]["Key"]
     assert key.startswith("OutputImages/photo_") and key.endswith(".png")
 
 
-def test_inpaint_with_mask_sets_mask_source(settings, fake_s3, image_response):
+def test_inpaint_passes_optional_mask_controls(settings, fake_s3, image_response):
     bedrock = RecordingBedrock("us-east-1", image_response)
     inpaint_impl(
         bedrock,
@@ -90,13 +93,16 @@ def test_inpaint_with_mask_sets_mask_source(settings, fake_s3, image_response):
         "s3://fashion-bucket/uploads/photo.png",
         "swap sky",
         mask_uri="s3://fashion-bucket/uploads/mask.png",
+        negative_prompt="blurry",
+        grow_mask=4,
     )
     body = bedrock.last_call["body"]
     assert "mask" in body
-    assert body["mask_source"] == "MASK_IMAGE_WHITE"
+    assert body["negative_prompt"] == "blurry"
+    assert body["grow_mask"] == 4
 
 
-def test_inpaint_requires_mask_or_search_prompt(settings, fake_s3, image_response):
+def test_inpaint_requires_mask(settings, fake_s3, image_response):
     bedrock = RecordingBedrock("us-east-1", image_response)
     result = inpaint_impl(
         bedrock, fake_s3, settings, "s3://fashion-bucket/uploads/a.png", "x"

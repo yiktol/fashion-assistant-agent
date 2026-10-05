@@ -29,10 +29,8 @@ from ._result import err, ok
 
 logger = logging.getLogger(__name__)
 
-# Pinned output format across all three image tools ([DOC] value).
+# Pinned output format across all three image tools.
 _OUTPUT_FORMAT = "png"
-# [DOC] inpaint mask source enum -- provisional.
-_MASK_SOURCE = "MASK_IMAGE_WHITE"
 _OUTPUT_PREFIX = "OutputImages"
 
 
@@ -90,27 +88,40 @@ def generate_image_impl(bedrock_image, s3, settings, prompt, weather=None) -> di
 # inpaint
 # --------------------------------------------------------------------------- #
 def inpaint_impl(
-    bedrock_primary, s3, settings, image_uri, prompt, mask_uri=None, search_prompt=None
+    bedrock_primary,
+    s3,
+    settings,
+    image_uri,
+    prompt,
+    mask_uri=None,
+    negative_prompt=None,
+    grow_mask=None,
 ) -> dict:
-    """Inpaint a masked region (us-east-1, us.-prefixed profile id)."""
+    """Inpaint a masked region (us-east-1, us.-prefixed profile id).
+
+    The Stability inpaint model's accepted fields (verified against the live
+    endpoint) are: image, prompt, mask, grow_mask, negative_prompt, seed,
+    output_format, style_preset. The mask is supplied only as a black/white
+    MASK IMAGE -- there is no text-driven region selection on this model.
+    """
     if not prompt or not prompt.strip():
         return err("a non-empty prompt is required")
-    if not mask_uri and not search_prompt:
-        return err("inpaint requires either mask_uri or search_prompt")
+    if not mask_uri:
+        return err("inpaint requires a mask image (mask_uri)")
 
     try:
         source_b64 = s3_io.download_b64(s3, image_uri)
-        # [DOC] body: image + prompt + mask (image+mask_source) or search_prompt.
+        # Verified Stability inpaint body: image + prompt + mask image.
         body_dict = {
             "prompt": prompt,
             "image": source_b64,
+            "mask": s3_io.download_b64(s3, mask_uri),
             "output_format": _OUTPUT_FORMAT,
         }
-        if mask_uri:
-            body_dict["mask"] = s3_io.download_b64(s3, mask_uri)
-            body_dict["mask_source"] = _MASK_SOURCE
-        else:
-            body_dict["search_prompt"] = search_prompt
+        if negative_prompt:
+            body_dict["negative_prompt"] = negative_prompt
+        if grow_mask is not None:
+            body_dict["grow_mask"] = grow_mask
 
         response = bedrock_primary.invoke_model(
             modelId=settings.inpaint_model_id,
@@ -194,23 +205,34 @@ def make_inpaint(bedrock_primary, s3, settings):
     def inpaint(
         image_uri: str,
         prompt: str,
-        mask_uri: str | None = None,
-        search_prompt: str | None = None,
+        mask_uri: str,
+        negative_prompt: str | None = None,
+        grow_mask: int | None = None,
     ) -> dict:
         """Edit a masked region of an existing image to a new style (inpaint).
+
+        Requires a black/white mask image: white marks the region to repaint,
+        black is kept. There is no text-driven region selection on this model.
 
         Args:
             image_uri: s3:// URI of the source image.
             prompt: Description of the desired result in the masked region.
-            mask_uri: Optional s3:// URI of a black/white mask image.
-            search_prompt: Optional text describing the region to replace,
-                used when no mask image is given.
+            mask_uri: s3:// URI of a black/white mask image (required).
+            negative_prompt: Optional text describing what to avoid.
+            grow_mask: Optional pixels to grow the mask edge (softens seams).
 
         Returns (json payload):
             {"result": "ok"|"error", "s3_uri": str|None, "message": str}
         """
         return inpaint_impl(
-            bedrock_primary, s3, settings, image_uri, prompt, mask_uri, search_prompt
+            bedrock_primary,
+            s3,
+            settings,
+            image_uri,
+            prompt,
+            mask_uri,
+            negative_prompt,
+            grow_mask,
         )
 
     return inpaint
