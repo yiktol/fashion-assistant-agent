@@ -1,7 +1,8 @@
 """Weather tool: Open-Meteo geocode + current-forecast lookup.
 
 Reuses the open-meteo logic and the WMO weather-code table from the old
-``lambda_function.py``. The dead Titan "WEATHER" taskType payload is dropped.
+``lambda_function.py``. The dead legacy embedding "WEATHER" taskType payload is
+dropped.
 
 LOCKED FIX 6: a geocode miss or non-200 is a *recoverable* miss returned as
 ``status="success"`` with a nested ``result="not_found"`` (never a Strands

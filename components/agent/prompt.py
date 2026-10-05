@@ -2,7 +2,7 @@
 
 Adapted from the legacy Bedrock-Agent instructions: the fashion-only gate and
 step guidance are kept, operations are renamed to the Strands tool names, and
-the ``<answer>``/``<thinking>`` tag framing plus the ``<generated_s3_uri>``
+the ``<answer>``/``<thinking>`` tag framing plus the legacy generated-URI tag
 emission rule are removed. Tools now return structured S3 URIs that the UI reads
 programmatically via the result hook, so the model states results in plain prose.
 """

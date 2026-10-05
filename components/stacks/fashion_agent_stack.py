@@ -1,6 +1,6 @@
 """Data-plane-only CDK stack for the Fashion Agent.
 
-The managed Bedrock Agent, its action-group Lambda, the OpenSearch Serverless
+The managed Bedrock agent, its action-group Lambda, the managed search-cluster
 collection, and every associated role/policy are GONE. The agent now runs
 in-process (Strands) against this cloud data plane, which provisions only:
 

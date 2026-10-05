@@ -4,7 +4,7 @@
 verified stable event in ``strands.hooks``) and records each
 ``(tool_name, result)`` pair. The UI scans the collected results newest-first
 for the first ``ok`` result carrying a non-null ``s3_uri`` -- this replaces the
-deleted ``<generated_s3_uri>`` text-parsing path.
+deleted legacy URI-tag text-parsing path.
 
 ``callback_handler`` (trace text) and this hook (result extraction) never
 overlap: the hook is the only result-extraction path.
