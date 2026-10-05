@@ -47,6 +47,22 @@ This replaces the old `pip install -r requirements.txt` flow; dependencies are p
 
 ## Deploy and run
 
+### One command (recommended)
+
+```bash
+scripts/deploy.sh
+```
+
+This runs the whole flow end to end: creates the `.venv` and installs deps, verifies AWS creds + CDK bootstrap, prints the Bedrock model-access checklist, runs `cdk deploy --outputs-file variables.json`, populates the S3 Vectors index with the demo catalog, and launches the Streamlit app. It is idempotent — re-run it any time.
+
+Useful toggles (environment variables): `INGEST_LIMIT=100` (ingest a subset), `SKIP_INGEST=1`, `SKIP_APP=1`, `NO_DEPLOY=1`, `STREAMLIT_PORT=8510`, `PRIMARY_REGION` / `IMAGE_REGION`.
+
+Tear everything down when you are done: `scripts/destroy.sh`.
+
+> Note: enabling Bedrock model access is a one-time console step and cannot be scripted; `deploy.sh` prints the exact list of models/regions to enable.
+
+### Manual steps
+
 1. **Deploy the data plane** and capture the stack outputs:
 
    ```bash
