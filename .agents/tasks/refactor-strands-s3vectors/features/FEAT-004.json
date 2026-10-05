@@ -1,0 +1,28 @@
+{
+  "id": "FEAT-004",
+  "type": "feat",
+  "description": "Streamlit in-process UI, the S3 Vectors ingest notebook (renamed, the sole index creator+populator per LOCKED FIX 2), and the README/flowchart documentation update. Depends on FEAT-001 (settings), FEAT-002 (variables.json output keys/managed policy for the README deploy+run story) and FEAT-003 (build_agent, tools, hooks). Grounded in the existing frontend/app.py + frontend/bedrock_agent.py (behaviors being replaced) and the old opensearch_ingest.ipynb (OpenSearch/profile removed). Also the final grep gate (AC-6).",
+  "status": "pending",
+  "steps": [
+    "Rewrite <WT>/frontend/app.py: load settings via load_settings(); build the Strands agent once per session with build_agent(settings) + a ToolResultCollector hook, stored in st.session_state (New Chat resets history and rebuilds). Image upload: keep the resize logic but pin the key to uploads/<uuid>.png (replacing blogpost/). Handoff to the agent is PLAIN PROSE: user turn text = f'{prompt}\\n\\nThe uploaded image is at {s3_uri}' with s3_uri=f's3://{image_bucket}/uploads/<uuid>.png' (no tag wrapping). After result=agent(prompt), discover the result image via the hook's latest_ok_s3_uri() (newest-first first result=='ok' with non-null s3_uri), download from S3 and render/download as today. Trace pane fed by a callback_handler accumulating streamed reasoning/tool-call text only (NOT results). Remove all <generated_s3_uri>/response_parser/regex and bedrock-agent-runtime usage. To keep the module import-safe for G-import, guard Streamlit page execution under 'if __name__ or a thin main()' or extract the pure logic (upload key building, prose handoff, hook extraction) into importable functions.",
+    "Delete <WT>/frontend/bedrock_agent.py.",
+    "Rewrite and rename <WT>/opensearch_ingest.ipynb -> <WT>/s3vectors_ingest.ipynb: drop opensearch-py/AWSV4SignerAuth/OpenSearch client and the profile_name='alexhrn-Admin' session (use boto3.Session with region from config, default credential chain, NFR-1). Read VectorBucketName/VectorIndexName from variables.json and model id + expected_dimension from config.yml. BOOTSTRAP CELL (LOCKED FIX 2 + 3): embed one probe input with Nova 2 (purpose GENERIC_INDEX), measure dim=len(vector) and LOG it; if config expected_dimension is non-null and != dim raise DimensionMismatchError; if s3vectors.get_index -> NotFound, call s3vectors.create_index(vectorBucketName, indexName, dataType='float32', dimension=dim, distanceMetric='cosine'). This notebook is the ONLY place CreateIndex is called. Then per dataset image: upload to s3://{image_bucket}/catalog/<name>, embed (GENERIC_INDEX), and s3vectors.put_vectors(vectors=[{'key':<id>,'data':{'float32':vec},'metadata':{'s3_uri':'s3://.../catalog/<name>','name':<name>}}]) -- NO base64 blob in metadata (FR-2.3). Add a markdown note that the vector BUCKET is created by cdk deploy but the INDEX is created here, so the notebook must run once before the app can query.",
+    "Update <WT>/README.md: replace the Titan/managed-Bedrock-Agent description with the Strands in-process agent + S3 Vectors + two-region architecture (primary us-east-1, embeddings us-east-1 Nova 2, image gen us-west-2 Stability). Update prerequisites to the exact enable-model-access list (Claude Sonnet 4.5 via us. profile, Nova 2 multimodal embeddings, Stability stable-image-core/ultra/inpaint/outpaint). Replace 'pip install -r requirements.txt' with pip install -e '.[infra,dev]'. Document: cdk deploy --outputs-file variables.json; attach the DataPlanePolicyArn managed policy to your identity; run the s3vectors_ingest.ipynb notebook ONCE to create+populate the index; then streamlit run frontend/app.py. Update the flowchart reference text to the new architecture (keep images/flowchart_agent.png reference or note it is illustrative).",
+    "Run the final grep gate and fix any residual references."
+  ],
+  "acceptance_criteria": [
+    "cd <WT> && grep -rniE 'bedrock-agent-runtime|opensearch|aoss|AWSV4SignerAuth|titan|<generated_s3_uri>|CfnAgent|AmazonBedrockExecutionRoleForAgents' --include='*.py' --include='*.md' --include='*.yml' --include='*.ipynb' . (excluding .agents/ and cdk.out/) returns no matches in active source (AC-6).",
+    "The importable logic of frontend/app.py imports without executing Streamlit page code (G-import, AC-5).",
+    "s3vectors_ingest.ipynb exists, opensearch_ingest.ipynb and frontend/bedrock_agent.py do not, and the notebook contains exactly one create_index call site reading a MEASURED dimension (LOCKED FIX 2/3).",
+    "README documents Strands in-process agent, S3 Vectors, the two-region note, the model-access list, and the attach-policy + run-notebook-once + streamlit run steps (AC-12).",
+    "After this feature, re-running cd <WT> && cdk synth --quiet (Docker stopped) and python3 -m pytest -q both still pass (no regression)."
+  ],
+  "verification": [
+    "cd <WT> && grep -rniE 'bedrock-agent-runtime|opensearch|aoss|AWSV4SignerAuth|titan|<generated_s3_uri>|CfnAgent|AmazonBedrockExecutionRoleForAgents' --include='*.py' --include='*.md' --include='*.yml' --include='*.ipynb' --exclude-dir=.agents --exclude-dir=cdk.out . ; test $? -ne 0 && echo 'GREP CLEAN'",
+    "cd <WT> && jupyter nbconvert --to script --stdout s3vectors_ingest.ipynb >/dev/null && echo 'notebook parses'",
+    "cd <WT> && python3 -m pytest -q",
+    "cd <WT> && cdk synth --quiet"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

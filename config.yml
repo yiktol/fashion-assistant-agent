@@ -1,14 +1,36 @@
 stack_name: "FashionAgentStack"
-schema_name: "FashionAgent_Schema.json"
-foundation_model : "anthropic.claude-3-sonnet-20240229-v1:0"
-agent_name: "FashionAgent"
-bucket_name:  "" # Defaults to fashion-agent-{account}-{region}
-embeddingSize: "1024"
 
-opensearch:
-  deploy: True
-  opensearch_index_name: images-index
-  opensearch_collection_name: fashion-image-collection
-   # A list of IAM arns that access the opensearch collection
-  opensearch_arns: [""] 
- 
+# Two-region split (see context.json key_patterns):
+#   primary_region   -> brain (Claude via us. profile), inpaint/outpaint us. profiles, S3, S3 Vectors
+#   embedding_region -> Nova 2 multimodal embeddings (ON_DEMAND, us-east-1 only today)
+#   image_region     -> Stability stable-image-core/ultra (ON_DEMAND, us-west-2 only today)
+primary_region: "us-east-1"
+image_region: "us-west-2"
+embedding_region: "us-east-1"
+
+# Defaults to fashion-agent-{account}-{region} when empty (populated by CDK deploy outputs).
+bucket_name: ""
+
+models:
+  agent: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+  embeddings: "amazon.nova-2-multimodal-embeddings-v1:0"
+  text_to_image: "stability.stable-image-core-v1:1"
+  text_to_image_alt: "stability.stable-image-ultra-v1:1"
+  inpaint: "us.stability.stable-image-inpaint-v1:0"
+  outpaint: "us.stability.stable-outpaint-v1:0"
+
+# Snapshot of the regions the Claude us. inference profile fans out to.
+# Re-check via GetInferenceProfile if the profile id changes (LOCKED FIX 5).
+inference_profile_fanout_regions:
+  - "us-east-1"
+  - "us-east-2"
+  - "us-west-2"
+
+vector_index:
+  bucket_name: "fashion-agent-vectors"
+  index_name: "images-index"
+  # LOCKED FIX 3: default null. Measure Nova 2 dimension at bootstrap and log it;
+  # enforce a dimension check only when this is non-null. Never hardcode 1024.
+  expected_dimension: null
+  distance_metric: "cosine"
+  top_k: 3

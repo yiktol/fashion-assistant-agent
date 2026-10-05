@@ -1,0 +1,54 @@
+{
+  "verdict": "CHANGES_REQUESTED",
+  "findings": [
+    {
+      "id": 1,
+      "severity": "MEDIUM",
+      "title": "CDK custom-resource provider Lambda uses Docker/pip asset bundling; AC-1 cdk synth not guaranteed Docker-free",
+      "location": "design.md \u00a7S3 Vectors construct (Option 4, BundlingOptions asset)",
+      "problem": "from_asset bundling runs in Docker at synth time when local bundling is unavailable. AC-1 (cdk synth succeeds) and AC-5 are deploy-free synth gates; if Docker is absent, synth fails. The design leaves the Docker-free route as a deferred implementation-time fallback rather than specifying it.",
+      "fix": "Pin a Docker-free synth path: either configure local ILocalBundling first (pip into output on host), or vendor a pre-populated no-bundling asset, or make the prebuilt LayerVersion the primary design. State explicitly that cdk synth runs without Docker."
+    },
+    {
+      "id": 2,
+      "severity": "MEDIUM",
+      "title": "App lazy bootstrap_index() path under-specified; conflicts with notebook-must-run-first",
+      "location": "design.md \u00a7Nova 2 Finding-1 resolution, \u00a7Ingest notebook, \u00a7Error handling",
+      "problem": "The app's lazy bootstrap_index() has undefined trigger timing, concurrency (multiple Streamlit sessions racing CreateIndex), and empty-index semantics. It also conflicts with the \u00a7Ingest note that 'the notebook must run once before the app can query' \u2014 a lazily-created index has no catalog vectors, so every lookup returns not_found.",
+      "fix": "Pick one model. Recommended: drop the app lazy bootstrap; make the index a notebook-created prerequisite; on app start call GetIndex and raise a clear fatal ConfigError if NotFound. If kept, specify trigger point, ConflictException-as-success under concurrency, and resolve the empty-index conflict."
+    },
+    {
+      "id": 3,
+      "severity": "NIT",
+      "title": "expected_dimension: 1024 default plus embeddingDimension hint reintroduce the unverified 1024 value",
+      "location": "design.md \u00a7config.yml, \u00a7Nova 2 request body",
+      "problem": "The committed default expected_dimension: 1024 will make the bootstrap mismatch check hard-fail on first run if Nova 2's actual length differs; 1024 is sent as a request hint too. Not load-bearing for CreateIndex (AC-7 still met by measurement), but a footgun.",
+      "fix": "Default expected_dimension: null (accept and log the measured value on first bootstrap); send embeddingDimension only when non-null; keep the mismatch check for explicitly-pinned values."
+    },
+    {
+      "id": 4,
+      "severity": "NIT",
+      "title": "aspect_ratio [DOC] value in generate_image has no correctness gate",
+      "location": "design.md \u00a7Stability text-to-image request body",
+      "problem": "aspect_ratio is a [DOC] enum; a wrong value fails every live generate_image call and mocked tests cannot catch it. Unlike image_lookup there is no generate-side smoke check.",
+      "fix": "Either omit aspect_ratio (use service default) or add a first-integration smoke step for generate_image/inpaint/outpaint asserting a non-filtered images[0] returns, referenced from \u00a7Testability."
+    },
+    {
+      "id": 5,
+      "severity": "NIT",
+      "title": "IAM fan-out ARN set is a static config snapshot that can drift from the invoked profile ids",
+      "location": "design.md \u00a7Data-plane IAM policy, \u00a7config.yml inference_profile_fanout_regions",
+      "problem": "The fan-out region set is a committed static list; if a us. profile's fan-out changes, InvokeModel can AccessDenied in an ungranted region (the design's error-handling already anticipates this).",
+      "fix": "Note the list is a verified snapshot to re-check via GetInferenceProfile on profile-id change, and make the ARN-builder unit test assert a foundation-model ARN is emitted for every region in inference_profile_fanout_regions per us. id."
+    },
+    {
+      "id": 6,
+      "severity": "NIT",
+      "title": "get_weather docstring puts the semantic value in the Strands status slot",
+      "location": "design.md \u00a7Strands tool interfaces (get_weather prose)",
+      "problem": "Prose shows {\"status\": \"not_found\", ...}, but the mandated envelope uses status in {success,error} with the semantic outcome under nested result. status=\"not_found\" is an invalid ToolResult.status.",
+      "fix": "Make it status=\"success\" with nested {\"result\":\"not_found\",\"description\":\"<default>\",\"temperature_f\":null}, consistent with the ok()/err() envelope used by the other tools."
+    }
+  ],
+  "reviewDoc": "/Users/erictole/demo/fashion-assistant-agent/.worktrees/refactor-strands-s3vectors/.agents/tasks/refactor-strands-s3vectors/design-review.md"
+}

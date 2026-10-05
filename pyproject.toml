@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fashion-assistant-agent"
+version = "0.1.0"
+description = "Fashion assistant agent (local Strands agent + S3 Vectors data plane)."
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "streamlit",
+    "strands-agents==1.23.0",
+    "strands-agents-tools==0.2.19",
+    "boto3==1.43.107",
+    "pillow",
+    "requests",
+    "pyyaml",
+]
+
+[project.optional-dependencies]
+infra = [
+    "aws-cdk-lib==2.150.0",
+    "constructs",
+    "cdk-nag",
+]
+dev = [
+    "pytest",
+    "pytest-mock",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["components"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

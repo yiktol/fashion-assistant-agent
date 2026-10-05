@@ -1,0 +1,7 @@
+{
+  "task_id": "task-refactor-strands-s3vectors",
+  "task_description": "Refactor the Fashion Assistant from a managed Bedrock Agent + OpenSearch Serverless + Titan architecture into a local Strands in-process agent with an S3 Vectors data plane and modern Bedrock models (Claude Sonnet 4.5 brain, Nova 2 embeddings, Stability image models), per design.md and the six locked fixes. Deploy-free: cdk synth must be Docker-free, pytest mocks all boto3/HTTP, no cdk deploy.",
+  "status": "pending",
+  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003", "FEAT-004"],
+  "blocked_reason": null
+}
