@@ -456,19 +456,40 @@ def run_app() -> None:  # pragma: no cover - exercised only via `streamlit run`
     ):
         with st.expander("Precise edit — brush a region (optional)", expanded=False):
             try:
-                # Compat shim: streamlit-drawable-canvas 0.9.3 imports
-                # `image_to_url` from `streamlit.elements.image`, but Streamlit
-                # >=1.40 moved it to `streamlit.elements.lib.image_utils`.
-                # Restore the symbol in its old location before importing the
-                # canvas so the import does not raise AttributeError.
+                # Compat shim for streamlit-drawable-canvas 0.9.3 on Streamlit
+                # >=1.40. Two breaks: (1) `image_to_url` moved from
+                # `streamlit.elements.image` to
+                # `streamlit.elements.lib.image_utils`; (2) its 2nd positional
+                # arg changed from an int `width` to a `LayoutConfig`. The
+                # canvas still calls `image_to_url(img, width:int, clamp,
+                # channels, fmt, image_id)`, so adapt that old call into the new
+                # signature by wrapping the int width in a LayoutConfig.
                 import streamlit.elements.image as _st_image_mod
 
                 if not hasattr(_st_image_mod, "image_to_url"):
                     from streamlit.elements.lib.image_utils import (
-                        image_to_url as _image_to_url,
+                        image_to_url as _new_image_to_url,
                     )
+                    from streamlit.elements.lib.layout_utils import LayoutConfig
 
-                    _st_image_mod.image_to_url = _image_to_url
+                    def _image_to_url_compat(
+                        image, width, clamp, channels, output_format, image_id
+                    ):
+                        layout_config = (
+                            width
+                            if isinstance(width, LayoutConfig)
+                            else LayoutConfig(width=width)
+                        )
+                        return _new_image_to_url(
+                            image,
+                            layout_config,
+                            clamp,
+                            channels,
+                            output_format,
+                            image_id,
+                        )
+
+                    _st_image_mod.image_to_url = _image_to_url_compat
 
                 from streamlit_drawable_canvas import st_canvas
             except ImportError:
