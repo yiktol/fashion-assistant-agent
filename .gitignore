@@ -164,3 +164,6 @@ cdk.out/
 *.zip
 components/lambda_function.py.zip
 variables.json
+
+# Demo catalog dataset (regenerable — cloned by the ingest notebook/script)
+Fashion-Dataset-Images-Western-Dress/
