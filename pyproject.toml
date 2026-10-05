@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.12,<3.14"
 dependencies = [
     "streamlit",
+    "streamlit-drawable-canvas==0.9.3",
     "strands-agents==1.23.0",
     "strands-agents-tools==0.2.19",
     "boto3==1.43.107",

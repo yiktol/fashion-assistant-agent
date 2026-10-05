@@ -27,6 +27,8 @@ _CONFIG = textwrap.dedent(
       text_to_image_alt: "stability.stable-image-ultra-v1:1"
       inpaint: "us.stability.stable-image-inpaint-v1:0"
       outpaint: "us.stability.stable-outpaint-v1:0"
+      search_replace: "us.stability.stable-image-search-replace-v1:0"
+      search_recolor: "us.stability.stable-image-search-recolor-v1:0"
     inference_profile_fanout_regions:
       - "us-east-1"
       - "us-east-2"
@@ -134,6 +136,8 @@ def test_model_id_prefixes(config_file: Path, variables_file: Path) -> None:
     assert cfg.agent_model_id.startswith("us.")
     assert cfg.inpaint_model_id.startswith("us.")
     assert cfg.outpaint_model_id.startswith("us.")
+    assert cfg.search_replace_model_id.startswith("us.")
+    assert cfg.search_recolor_model_id.startswith("us.")
     # bare on-demand ids
     assert not cfg.embedding_model_id.startswith("us.")
     assert not cfg.text_to_image_model_id.startswith("us.")

@@ -17,6 +17,7 @@ from __future__ import annotations
 import io
 import uuid
 
+import numpy as np
 from PIL import Image
 
 # ----------------------------------------------------------------------------
@@ -54,6 +55,42 @@ def build_handoff(prompt: str, s3_uri: str | None) -> str:
     if s3_uri:
         return f"{prompt}\n\nThe uploaded image is at {s3_uri}"
     return prompt
+
+
+def strokes_to_mask_png(canvas_rgba: "np.ndarray", size: tuple[int, int]) -> bytes:
+    """Convert a drawable-canvas RGBA stroke layer to a black/white mask PNG.
+
+    Mask contract (matches the Stability inpaint mask): white (255) marks the
+    brushed region to REPAINT, black (0) marks the region to KEEP. Any canvas
+    pixel with a non-zero alpha channel is treated as brushed.
+
+    Args:
+        canvas_rgba: an ``(H, W, 4)`` RGBA array of the stroke layer (e.g.
+            ``st_canvas(...).image_data``). A 3-channel array is accepted too,
+            in which case any non-black pixel counts as brushed.
+        size: the target ``(width, height)`` of the source image; the mask is
+            resized to match so inpaint receives matching dimensions.
+
+    Returns:
+        PNG bytes of a single-channel ("L") mask resized to ``size``.
+
+    Pure: PIL/numpy only, no Streamlit, no AWS, no network.
+    """
+    array = np.asarray(canvas_rgba)
+    if array.ndim == 3 and array.shape[2] >= 4:
+        brushed = array[:, :, 3] > 0
+    elif array.ndim == 3:
+        brushed = array[:, :, :3].any(axis=2)
+    else:
+        brushed = array > 0
+    mask = np.where(brushed, 255, 0).astype("uint8")
+    # A 2-D uint8 array maps to an "L" (8-bit grayscale) image.
+    mask_image = Image.fromarray(mask).convert("L")
+    # Nearest keeps the mask strictly black/white after the resize.
+    mask_image = mask_image.resize(size, resample=Image.NEAREST)
+    out = io.BytesIO()
+    mask_image.save(out, format="PNG")
+    return out.getvalue()
 
 
 def normalize_image(file_obj) -> bytes:
@@ -124,6 +161,8 @@ def run_app() -> None:  # pragma: no cover - exercised only via `streamlit run`
         "generate_image": "Generating a look…",
         "inpaint": "Restyling your photo…",
         "outpaint": "Extending your photo…",
+        "search_replace": "Replacing the item…",
+        "search_recolor": "Recoloring the item…",
         "get_weather": "Checking the weather…",
         "weather": "Checking the weather…",
     }
@@ -173,6 +212,7 @@ def run_app() -> None:  # pragma: no cover - exercised only via `streamlit run`
     st.session_state.setdefault("previous_img", None)
     st.session_state.setdefault("user_image", None)
     st.session_state.setdefault("upload_key", None)
+    st.session_state.setdefault("normalized_png", None)
     # A queued suggestion from a pill click, consumed on the next run.
     st.session_state.setdefault("pending_prompt", None)
 
@@ -200,6 +240,7 @@ def run_app() -> None:  # pragma: no cover - exercised only via `streamlit run`
         st.session_state["user_image"] = None
         st.session_state["upload_key"] = None
         st.session_state["pending_prompt"] = None
+        st.session_state["normalized_png"] = None
         st.session_state.pop("agent", None)
         st.session_state.pop("collector", None)
 
@@ -209,19 +250,36 @@ def run_app() -> None:  # pragma: no cover - exercised only via `streamlit run`
         st.session_state["previous_img"] = None
         st.session_state["user_image"] = None
         st.session_state["upload_key"] = None
+        st.session_state["normalized_png"] = None
 
     def queue_suggestion(text: str) -> None:
         """Queue a pill suggestion to submit as the next user turn."""
         st.session_state["pending_prompt"] = text
 
     def upload_image(file_obj) -> str:
-        """Normalize + upload an image to ``uploads/<uuid>.png``; return the key."""
+        """Normalize + upload an image to ``uploads/<uuid>.png``; return the key.
+
+        Also stashes the normalized PNG bytes in session state so the mask-brush
+        canvas can render over (and size its mask to) the exact uploaded image.
+        """
         key = build_upload_key()
         data = normalize_image(file_obj)
+        st.session_state["normalized_png"] = data
         boto3.client("s3", region_name=settings.primary_region).put_object(
             Bucket=image_bucket, Key=key, Body=data, ContentType="image/png"
         )
         return key
+
+    def upload_mask(mask_bytes: bytes) -> str:
+        """Upload a black/white mask PNG to ``uploads/<uuid>_mask.png``.
+
+        Returns the resulting ``s3://`` URI so the agent can pass it to inpaint.
+        """
+        mask_key = f"uploads/{uuid.uuid4()}_mask.png"
+        boto3.client("s3", region_name=settings.primary_region).put_object(
+            Bucket=image_bucket, Key=mask_key, Body=mask_bytes, ContentType="image/png"
+        )
+        return build_s3_uri(image_bucket, mask_key)
 
     def download_image(s3_uri: str) -> Image.Image:
         s3 = boto3.client("s3", region_name=settings.primary_region)
@@ -381,6 +439,60 @@ def run_app() -> None:  # pragma: no cover - exercised only via `streamlit run`
     if st.session_state["user_image"] is not None:
         st.markdown('<p class="fa-attach">📎 Image attached</p>', unsafe_allow_html=True)
 
+    # --- Mask-free vs. precise edit helper hint. ---
+    st.caption(
+        "Describe the change in words for an automatic edit (replace or recolor "
+        "an item — no mask needed), or brush a region below for a precise inpaint."
+    )
+
+    # --- Optional in-UI mask brush (precise inpaint without a hand-made mask). ---
+    # Builds a black/white mask from brush strokes over the uploaded image and
+    # uploads it; the agent then passes its s3:// URI to inpaint. Collapsed by
+    # default so the mask-free search_replace/recolor path stays the easy choice.
+    mask_uri = None
+    if (
+        st.session_state["user_image"] is not None
+        and st.session_state.get("normalized_png")
+    ):
+        with st.expander("Precise edit — brush a region (optional)", expanded=False):
+            try:
+                from streamlit_drawable_canvas import st_canvas
+            except ImportError:
+                st.info(
+                    "Mask brush unavailable — install `streamlit-drawable-canvas` "
+                    "to brush a region. You can still describe the change in words "
+                    "for an automatic edit."
+                )
+                st_canvas = None
+
+            if st_canvas is not None:
+                source_image = Image.open(
+                    io.BytesIO(st.session_state["normalized_png"])
+                ).convert("RGB")
+                source_width, source_height = source_image.size
+                st.caption(
+                    "Brush over the area to repaint (white = repaint, "
+                    "untouched = keep)."
+                )
+                canvas_result = st_canvas(
+                    fill_color="rgba(255, 255, 255, 1.0)",
+                    stroke_width=30,
+                    stroke_color="rgba(255, 255, 255, 1.0)",
+                    background_image=source_image,
+                    update_streamlit=True,
+                    height=source_height,
+                    width=source_width,
+                    drawing_mode="freedraw",
+                    key="mask-canvas",
+                )
+                strokes = getattr(canvas_result, "image_data", None)
+                if strokes is not None and np.asarray(strokes)[:, :, 3].any():
+                    mask_bytes = strokes_to_mask_png(
+                        strokes, (source_width, source_height)
+                    )
+                    mask_uri = upload_mask(mask_bytes)
+                    st.caption("Mask ready — your next message will use it to inpaint.")
+
     typed = st.chat_input("Start your conversation...")
     prompt = st.session_state.pop("pending_prompt", None) or typed
 
@@ -397,6 +509,11 @@ def run_app() -> None:  # pragma: no cover - exercised only via `streamlit run`
         if st.session_state["user_image"] is not None and st.session_state["upload_key"]:
             s3_uri = build_s3_uri(image_bucket, st.session_state["upload_key"])
         handoff = build_handoff(prompt, s3_uri)
+        if mask_uri:
+            handoff = (
+                f"{handoff}\n\nA black/white mask for a precise inpaint is at "
+                f"{mask_uri} (white = repaint, black = keep)."
+            )
 
         with st.chat_message("assistant"):
             trace = TraceCollector()

@@ -28,6 +28,8 @@ class FakeSettings:
     text_to_image_alt_model_id: str = "stability.stable-image-ultra-v1:1"
     inpaint_model_id: str = "us.stability.stable-image-inpaint-v1:0"
     outpaint_model_id: str = "us.stability.stable-outpaint-v1:0"
+    search_replace_model_id: str = "us.stability.stable-image-search-replace-v1:0"
+    search_recolor_model_id: str = "us.stability.stable-image-search-recolor-v1:0"
     expected_embedding_dimension: int | None = None
     image_bucket: str = "fashion-bucket"
     vector_bucket: str = "fashion-vectors"

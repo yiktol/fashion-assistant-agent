@@ -18,6 +18,8 @@ models:
   text_to_image_alt: "stability.stable-image-ultra-v1:1"
   inpaint: "us.stability.stable-image-inpaint-v1:0"
   outpaint: "us.stability.stable-outpaint-v1:0"
+  search_replace: "us.stability.stable-image-search-replace-v1:0"
+  search_recolor: "us.stability.stable-image-search-recolor-v1:0"
 
 # Snapshot of the regions the Claude us. inference profile fans out to.
 # Re-check via GetInferenceProfile if the profile id changes (LOCKED FIX 5).

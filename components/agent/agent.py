@@ -1,6 +1,6 @@
 """In-process Strands agent runtime: client factory + ``build_agent``.
 
-Builds the two-region boto3 client split, wires the five ``@tool`` functions over
+Builds the two-region boto3 client split, wires the ``@tool`` functions over
 their injected clients/settings, and constructs the Strands ``Agent`` with the
 Claude Sonnet 4.5 ``BedrockModel`` brain.
 
@@ -22,7 +22,13 @@ from strands.models import BedrockModel
 
 from .prompt import system_prompt
 from .settings import ConfigError, Settings, load_settings
-from .tools.image_gen import make_generate_image, make_inpaint, make_outpaint
+from .tools.image_gen import (
+    make_generate_image,
+    make_inpaint,
+    make_outpaint,
+    make_search_recolor,
+    make_search_replace,
+)
 from .tools.image_lookup import make_image_lookup
 from .tools.weather import get_weather
 
@@ -102,6 +108,8 @@ def build_agent(settings: Settings | None = None, callback_handler=None, hooks=N
         ),
         make_inpaint(clients.bedrock_primary, clients.s3, settings),
         make_outpaint(clients.bedrock_primary, clients.s3, settings),
+        make_search_replace(clients.bedrock_primary, clients.s3, settings),
+        make_search_recolor(clients.bedrock_primary, clients.s3, settings),
     ]
 
     model = BedrockModel(

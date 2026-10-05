@@ -50,6 +50,8 @@ _REQUIRED_MODEL_KEYS = (
     "text_to_image_alt",
     "inpaint",
     "outpaint",
+    "search_replace",
+    "search_recolor",
 )
 
 
@@ -71,6 +73,8 @@ class Settings:
     text_to_image_alt_model_id: str
     inpaint_model_id: str
     outpaint_model_id: str
+    search_replace_model_id: str
+    search_recolor_model_id: str
 
     inference_profile_fanout_regions: tuple[str, ...]
     expected_embedding_dimension: int | None
@@ -215,6 +219,8 @@ def load_settings(
         text_to_image_alt_model_id=models["text_to_image_alt"],
         inpaint_model_id=models["inpaint"],
         outpaint_model_id=models["outpaint"],
+        search_replace_model_id=models["search_replace"],
+        search_recolor_model_id=models["search_recolor"],
         inference_profile_fanout_regions=tuple(fanout),
         expected_embedding_dimension=expected_dimension,
         image_bucket=image_bucket,

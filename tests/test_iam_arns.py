@@ -16,12 +16,16 @@ MODELS = {
     "text_to_image_alt": "stability.stable-image-ultra-v1:1",
     "inpaint": "us.stability.stable-image-inpaint-v1:0",
     "outpaint": "us.stability.stable-outpaint-v1:0",
+    "search_replace": "us.stability.stable-image-search-replace-v1:0",
+    "search_recolor": "us.stability.stable-image-search-recolor-v1:0",
 }
 
 US_PREFIXED = [
     "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
     "us.stability.stable-image-inpaint-v1:0",
     "us.stability.stable-outpaint-v1:0",
+    "us.stability.stable-image-search-replace-v1:0",
+    "us.stability.stable-image-search-recolor-v1:0",
 ]
 BARE = [
     "amazon.nova-2-multimodal-embeddings-v1:0",
@@ -61,9 +65,9 @@ def test_arns_are_deduplicated():
 
 
 def test_expected_total_arn_count():
-    # 3 us.-prefixed * 3 regions * 2 ARNs each = 18, + 3 bare * 1 = 21.
+    # 5 us.-prefixed * 3 regions * 2 ARNs each = 30, + 3 bare * 1 = 33.
     arns = build_invoke_model_resource_arns(MODELS, FANOUT, ACCOUNT)
-    assert len(arns) == 21, arns
+    assert len(arns) == 33, arns
 
 
 def test_empty_model_id_is_skipped():
