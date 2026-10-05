@@ -89,22 +89,26 @@ else
 fi
 
 # ----------------------------------------------------------------------------
-# 5. Bedrock model-access reminder (console-only; cannot be enabled via CLI)
+# 5. Bedrock model access
 # ----------------------------------------------------------------------------
-log "Bedrock model access (enable once in the console if not already)"
+# Since the 2025 "Simplified model access" change, Amazon Bedrock serverless
+# foundation models are available by DEFAULT — the Model Access page and the
+# PutFoundationModelEntitlement permission were retired, and access is governed
+# by IAM/SCPs (handled here by FashionDataPlanePolicy). No manual per-model
+# enablement is required. The one remaining caveat: Anthropic models (the Claude
+# brain) require a ONE-TIME use-case form on first use per org, via the console.
+# See: https://aws.amazon.com/blogs/security/simplified-amazon-bedrock-model-access/
+log "Bedrock model access (serverless models are enabled by default)"
 cat <<EOF
-  Required model access — Amazon Bedrock console -> Model access:
-    ${PRIMARY_REGION}:
-      - us.anthropic.claude-sonnet-4-5-20250929-v1:0   (brain, cross-region profile)
-      - amazon.nova-2-multimodal-embeddings-v1:0        (embeddings)
-      - us.stability.stable-image-inpaint-v1:0          (inpaint)
-      - us.stability.stable-outpaint-v1:0               (outpaint)
-      - us.stability.stable-image-search-replace-v1:0   (replace an item, mask-free)
-      - us.stability.stable-image-search-recolor-v1:0   (recolor an item, mask-free)
-    ${IMAGE_REGION}:
-      - stability.stable-image-core-v1:1                (text-to-image generate)
-      - stability.stable-image-ultra-v1:1               (optional, higher quality)
-  Model access is account/region config and cannot be set from this script.
+  Serverless foundation models are available by default — no manual
+  "enable model access" step is needed. IAM governs access, and the
+  FashionDataPlanePolicy created by this stack grants the required
+  bedrock:InvokeModel permissions.
+
+  One-time caveat: Anthropic Claude (the agent brain) requires a one-time
+  use-case form submission per organization before first use. If you have
+  never used an Anthropic model in this org, submit it once from the Bedrock
+  console (Model catalog -> an Anthropic model -> playground), then re-run.
 EOF
 
 # ----------------------------------------------------------------------------

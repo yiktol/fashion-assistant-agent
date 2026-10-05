@@ -29,11 +29,8 @@ Retrieval data plane: catalog images live in the S3 image bucket under `catalog/
 - An active AWS account using the default credential chain (no profile is baked into the project).
 - Node.js + npm and the AWS CDK CLI (`npm install -g aws-cdk`).
 - Python `>=3.12,<3.14`.
-- **Enable model access** in the Amazon Bedrock console for these models, in the listed regions:
-  - **Anthropic Claude Sonnet 4.5** via the `us.anthropic.claude-sonnet-4-5-20250929-v1:0` cross-region inference profile (fans out to `us-east-1`, `us-east-2`, `us-west-2`).
-  - **Amazon Nova 2 multimodal embeddings** (`amazon.nova-2-multimodal-embeddings-v1:0`) in `us-east-1`.
-  - **Stability stable-image-core** (`stability.stable-image-core-v1:1`) and **stable-image-ultra** (`stability.stable-image-ultra-v1:1`) in `us-west-2`.
-  - **Stability inpaint/outpaint** profiles (`us.stability.stable-image-inpaint-v1:0`, `us.stability.stable-outpaint-v1:0`) in `us-east-1`.
+- **Bedrock model access:** no manual enablement needed. Since the 2025 [Simplified model access](https://aws.amazon.com/blogs/security/simplified-amazon-bedrock-model-access/) change, Amazon Bedrock serverless foundation models are available by default (the Model Access page and `PutFoundationModelEntitlement` were retired); access is governed by IAM, and the stack's `FashionDataPlanePolicy` grants the required `bedrock:InvokeModel` permissions. The models this project uses: Claude Sonnet 4.5 (`us.anthropic.claude-sonnet-4-5-20250929-v1:0`, brain), Nova 2 multimodal embeddings (`amazon.nova-2-multimodal-embeddings-v1:0`, `us-east-1`), Stability generate (`stability.stable-image-core-v1:1` / `-ultra`, `us-west-2`), and the Stability `us.` inpaint/outpaint/search-replace/search-recolor profiles (`us-east-1`).
+  - **One-time caveat:** Anthropic Claude requires a one-time use-case form submission per organization before first use (via the Bedrock console). If no Anthropic model has ever been used in your org, submit it once, then proceed.
 
 ## Installation
 
