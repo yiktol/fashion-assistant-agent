@@ -1,0 +1,29 @@
+{
+  "project_type": "Local in-process Strands fashion agent (Claude Sonnet 4.5 brain) + Streamlit UI; CDK provisions only the S3 + S3 Vectors data plane. No managed Bedrock agent runtime.",
+  "language": "Python 3.13 (requires-python >=3.12,<3.14)",
+  "build_system": "hatchling (PEP 517). No compile step; package is 'components'. Quirk: frontend/ is NOT a package in pyproject wheel targets but is imported as 'frontend.app' from the repo root during tests/import-safety; run commands from the worktree root.",
+  "test_framework": "pytest + pytest-mock (dev extra). Everything mocked, no real AWS/network (NFR-5). Fixtures in tests/conftest.py (FakeSettings, FakeS3, RecordingBedrock, embedding_response, image_response, png_b64).",
+  "build_command": "No separate build. Sanity: python -c \"import frontend.app\" (must NOT execute Streamlit page code).",
+  "test_command": "python3 -m pytest -q   (run from the worktree root; testpaths=tests)",
+  "verification_instructions": "1) Import-safety gate: `python -c \"import frontend.app\"` must print nothing/no error and must NOT run page code (all page code lives in run_app() under `if __name__ == \"__main__\"`). 2) Unit gate: `python3 -m pytest -q` from the worktree root — baseline is 35 passed; must stay green plus any added tests. Do NOT run `streamlit run`, do NOT call real AWS, do NOT run `cdk deploy`.",
+  "snapshot_or_generated_files": null,
+  "environment_constraints": "WORK ONLY in /Users/erictole/demo/fashion-assistant-agent/.worktrees/frontend-modern-ux (relative paths land in the parent workspace). Use `git -C /Users/erictole/demo/fashion-assistant-agent/.worktrees/frontend-modern-ux` for git. Branch frontend-modern-ux. Installed: streamlit 1.60.0 (NOTE: brief said 1.65.0; actual is 1.60.0 — both st.status and st.dialog exist, but gate every use on hasattr with a graceful fallback), strands-agents 1.23.0, boto3 1.43.107, Pillow, pyyaml. No new heavy dependencies; no external/network fonts.",
+  "contribution_requirements": "CONTRIBUTING.md: focus the diff on the specific change, do not reformat unrelated code, ensure local tests pass before submitting. Commit locally on the branch with clear messages; never push.",
+  "key_patterns": "Tools return the native Strands ToolResult envelope via _result.ok()/not_found()/err(): {\"status\":\"success|error\",\"content\":[{\"json\":{...}}]}. status is ONLY success|error; a recoverable miss is status=success with nested result=\"not_found\". ToolResultCollector (hooks.py) is a HookProvider on AfterToolCallEvent recording (tool_name, result) pairs; latest_ok_s3_uri() scans newest-first for an ok payload with non-null s3_uri. Pure helpers (build_upload_key, build_s3_uri, build_handoff, normalize_image, TraceCollector, INIT_MESSAGE) are at module scope in frontend/app.py with NO Streamlit side effects; ALL page code is inside run_app(). settings via load_settings() -> frozen Settings (primary_region, image_region, embedding_region, image_bucket, vector_bucket, vector_index, top_k=3). Never hardcode regions/bucket/index. Vector metadata carries BOTH s3_uri AND name (s3vectors_ingest.ipynb writes {\"s3_uri\": catalog_uri, \"name\": name}).",
+  "relevant_files": [
+    "frontend/app.py — Streamlit UI; MODIFY (all changes inside run_app; preserve module-scope pure helpers + __main__ guard).",
+    "components/agent/hooks.py — ToolResultCollector; MODIFY (add latest_image_lookup_matches(), keep latest_ok_s3_uri()).",
+    "components/agent/tools/image_lookup.py — MODIFY (return additive `matches` list of all top-K hits; keep s3_uri/distance mirroring matches[0]).",
+    "components/agent/tools/_result.py — STUDY ONLY (ok/not_found/err envelope builders; ok(**fields) passes arbitrary fields through).",
+    "components/agent/tools/image_gen.py — STUDY (generate_image/inpaint/outpaint return single ok(s3_uri=...) or err(message)).",
+    "components/agent/tools/s3_io.py — STUDY (download_bytes(s3, uri), parse_s3_uri, upload_png).",
+    "components/agent/settings.py — STUDY (load_settings, ConfigError, Settings fields, top_k).",
+    "components/agent/agent.py — STUDY (build_agent(settings, hooks=[...])).",
+    "config.yml — STUDY (vector_index.top_k: 3).",
+    "tests/conftest.py — STUDY/REUSE fixtures (FakeSettings, FakeS3, RecordingBedrock, embedding_response).",
+    "tests/test_image_lookup.py — MODIFY (add multi-match test; RecordingS3Vectors lives here).",
+    "tests/test_envelope.py — MODIFY (add latest_image_lookup_matches tests; FakeAfterToolCallEvent/FakeRegistry live here).",
+    "s3vectors_ingest.ipynb — STUDY ONLY (confirms metadata keys s3_uri + name)."
+  ],
+  "directory_structure": "components/agent/{agent.py,hooks.py,settings.py,prompt.py,logging_config.py}; components/agent/tools/{_result.py,embeddings.py,image_gen.py,image_lookup.py,s3_io.py,weather.py}; frontend/app.py; tests/{conftest.py,test_envelope.py,test_image_lookup.py,test_image_gen.py,test_settings.py,test_weather.py,test_iam_arns.py}; config.yml; pyproject.toml; .agents/tasks/frontend-modern-ux/ (plan + FEAT artifacts; NOT part of the package). .streamlit/config.toml to be created."
+}

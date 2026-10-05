@@ -1,0 +1,7 @@
+{
+  "task_id": "task-frontend-modern-ux",
+  "task_description": "Modernize the Streamlit frontend of fashion-assistant-agent into a polished fashion/retail-grade UI/UX, and make the backend result-shape change so the catalog lookup can expose ALL top-K matches (not just the single top hit). Keep import-safety and unit-test gates green; deploy-free verification with mocked boto3.",
+  "status": "pending",
+  "feature_order": ["FEAT-001", "FEAT-002"],
+  "blocked_reason": null
+}
