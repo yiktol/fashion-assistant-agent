@@ -10,3 +10,8 @@ font = "sans serif"
 [server]
 # Keep uploads reasonable for photo restyling; no behavior-affecting defaults.
 maxUploadSize = 50
+headless = true
+
+[client]
+toolbarMode = "minimal"
+
